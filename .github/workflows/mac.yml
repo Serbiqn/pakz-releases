@@ -1,0 +1,50 @@
+name: Pakz Mac
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Objavi Pakz-Plugin-Mac.zip i install-mac.sh na poslednje izdanje"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ["mac-build/**", ".github/workflows/mac.yml"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pakz-mac
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unpack sources
+        env:
+          PAKZ_BUILD_KEY: ${{ secrets.PAKZ_BUILD_KEY }}
+        run: node mac-build/unpack.cjs mac-build/payload.b64 work
+      - name: Build, install and test on a real Mac
+        run: bash work/ci.sh
+      - name: Upload build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pakz-Mac
+          path: work/out/
+          if-no-files-found: warn
+      - name: Publish to the latest release
+        if: ${{ success() && inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
+          echo "Uploading to $TAG"
+          gh release upload "$TAG" work/out/Pakz-Plugin-Mac.zip work/out/install-mac.sh --repo "$GITHUB_REPOSITORY" --clobber
